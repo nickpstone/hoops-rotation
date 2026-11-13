@@ -56,4 +56,17 @@ assert.strictEqual(Object.keys(f3).length, 0);
 breakCheck('7 players, 2 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],true],['D',[1,2,3],true],['E',[4,5],false],['F',[4,5],true],['G',[1,2,3,4,5],true]], q, 5);
 assert.strictEqual(mv2, 0, 'player changed position mid-quarter');
 assert.strictEqual(P.positionMoves(P.bestPlan(P.buildStints(q), 0, players).stints), 0);
+// starting 5: locked exactly, minutes still even
+{
+  const pl = [['A',[1,2,3]],['B',[1,2,3]],['C',[1,2,3]],['D',[1,2,3]],['E',[4,5]],['F',[4,5]],['G',[1,2,3,4,5]],['H',[3,4,5]]].map(([id,pos])=>({id,pos}));
+  const starters = { 1: 'D', 2: 'C', 3: 'H', 4: 'F', 5: 'E' };
+  const r = P.bestPlan(P.buildStints(q), 0, pl, { lockFirst: starters });
+  assert.deepStrictEqual({ ...r.stints[0].lineup }, { 1: 'D', 2: 'C', 3: 'H', 4: 'F', 5: 'E' });
+  const m = P.minutes(r.stints); const v = pl.map(p => m[p.id]);
+  console.log('\nstarting 5 minutes', JSON.stringify(m));
+  assert(Math.max(...v) - Math.min(...v) === 0);
+  // partial: only the point guard chosen
+  const r2 = P.bestPlan(P.buildStints(q), 0, pl, { lockFirst: { 1: 'G' } });
+  assert.strictEqual(r2.stints[0].lineup[1], 'G');
+}
 console.log('\nALL OK');

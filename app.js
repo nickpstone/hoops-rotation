@@ -120,6 +120,14 @@
       ${playing.length < 5 ? '<div class="warn">Tick at least 5 players.</div>' : ''}
       ${playing.length >= 5 && gaps.length ? `<div class="warn">Nobody ticked can play ${gaps.map((n) => n + ' (' + POS_NAME[n] + ')').join(', ')} — someone will be put there out of position.</div>` : ''}
       ${playing.length >= 5 ? `<p class="hint">About ${each} min each if it splits evenly.</p>` : ''}
+
+      <h2>Starting 5 ${Object.keys(starters()).length ? '<button class="btn small ghost" data-act="clear-starters" style="float:right;margin-top:-6px">Clear</button>' : ''}</h2>
+      <p class="hint">Optional. Tap a position to pick the starter — leave on Auto and the app picks.</p>
+      <div class="card lineup">
+        ${POS.map((n) => { const id = starters()[n]; return `<div class="slot" data-act="starter" data-p="${n}"><span class="pos" data-p="${n}">${n}</span>
+          <div class="grow name">${id ? esc(nameOf(id)) : '<span class="sub" style="font-size:16px">Auto</span>'}</div>
+          ${id && offPos(id, n) ? '<span class="tag offpos">OUT OF POS</span>' : ''}<span class="arrow">›</span></div>`; }).join('')}
+      </div>
       <button class="btn primary block" data-act="make" ${playing.length < 5 ? 'disabled' : ''}>Make rotation</button>`;
 
     $view.querySelectorAll('select[data-set]').forEach((sel) => sel.addEventListener('change', () => {
@@ -128,11 +136,58 @@
   }
   const miniPos = (p) => (canFull(p) ? '' : '<span class="tag brk" title="Needs a break">☕</span> ') + `<span class="mini">${p.pos.slice().sort().map((n) => `<span class="pos" data-p="${n}" style="width:18px;height:18px;border-radius:5px;font-size:11px">${n}</span>`).join('')}</span>`;
 
+  /** Chosen starters {pos: id}, ignoring anyone not ticked for today. */
+  function starters() {
+    const out = {};
+    Object.entries(S.starters || {}).forEach(([pos, id]) => { if (player(id) && isAvail(id)) out[pos] = id; });
+    return out;
+  }
+
+  /** Simple chooser using the shared dialog; calls done(value) with '' for cancel. */
+  function choose(html, done) {
+    const dlg = document.getElementById('picker');
+    const body = document.getElementById('pickerBody');
+    body.innerHTML = html;
+    body.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      e.preventDefault();
+      body.onclick = null;
+      dlg.close();
+      done(b.value);
+    };
+    dlg.showModal();
+  }
+
+  function pickStarter(pos) {
+    const st = starters();
+    const onAt = {}; Object.entries(st).forEach(([n, id]) => { onAt[id] = Number(n); });
+    const opts = S.players.filter((p) => isAvail(p.id)).sort((a, b) =>
+      (b.pos.includes(pos) - a.pos.includes(pos)) || a.name.localeCompare(b.name));
+    choose(`
+      <h3><span class="pos" data-p="${pos}">${pos}</span> ${POS_NAME[pos]} · starter</h3>
+      <button class="pick ${st[pos] ? '' : 'cur'}" value="auto"><div class="grow"><div class="name">Auto</div><div class="sub">Let the app choose</div></div></button>
+      ${opts.map((p) => `<button class="pick ${st[pos] === p.id ? 'cur' : ''}" value="${p.id}">
+        <div class="grow"><div class="name">${esc(p.name)}</div>
+        <div class="sub">${onAt[p.id] && onAt[p.id] !== pos ? 'starting at ' + onAt[p.id] + (st[pos] ? ' (will swap)' : ' (will move)') : ''}${p.pos.includes(pos) ? '' : (onAt[p.id] && onAt[p.id] !== pos ? ' · ' : '') + '<span style="color:var(--warn)">not a ' + pos + '</span>'}</div></div>
+        ${miniPos(p)}</button>`).join('')}
+      <button class="btn ghost block" value="">Cancel</button>`, (v) => {
+      if (!v) return;
+      S.starters = starters();
+      if (v === 'auto') delete S.starters[pos];
+      else {
+        const other = onAt[v];
+        if (other && other !== pos) { if (S.starters[pos]) S.starters[other] = S.starters[pos]; else delete S.starters[other]; }
+        S.starters[pos] = v;
+      }
+      save(); const y = window.scrollY; render(); window.scrollTo(0, y);
+    });
+  }
+
   function makeGame() {
     if (S.game && S.game.cur > 0 && !confirm('Replace the game in progress with a new rotation?')) return;
     const playing = S.players.filter((p) => isAvail(p.id));
     const settings = Object.assign({}, S.settings);
-    const r = P.bestPlan(P.buildStints(settings), 0, playing);
+    const r = P.bestPlan(P.buildStints(settings), 0, playing, { lockFirst: starters() });
     if (r.error) { alert(r.error); return; }
     const avail = {}; playing.forEach((p) => { avail[p.id] = true; });
     S.game = { settings, stints: r.stints, cur: 0, avail, timer: { left: r.stints[0].len * 60, endAt: null, alarmed: false } };
@@ -278,26 +333,20 @@
     const planned = P.minutes(g.stints);
     const opts = gamePlayers().slice().sort((a, b) =>
       (b.pos.includes(pos) - a.pos.includes(pos)) || ((planned[a.id] || 0) - (planned[b.id] || 0)));
-    const body = document.getElementById('pickerBody');
-    body.innerHTML = `
+    choose(`
       <h3><span class="pos" data-p="${pos}">${pos}</span> ${POS_NAME[pos]} · ${periodLabel(st.period, g.settings.periods)} ${st.start}:00</h3>
       ${opts.map((p) => `<button class="pick ${p.id === curId ? 'cur' : ''}" value="${p.id}">
         <div class="grow"><div class="name">${esc(p.name)}</div>
         <div class="sub">${planned[p.id] || 0} min planned${onAt[p.id] && p.id !== curId ? ' · on at ' + onAt[p.id] + ' (will swap)' : ''}${p.pos.includes(pos) ? '' : ' · <span style="color:var(--warn)">not a ' + pos + '</span>'}${P.mustRest(g.stints, s, S.players).has(p.id) ? ' · <span style="color:var(--warn)">would play full ' + periodWord() + '</span>' : ''}</div></div>
         ${miniPos(p)}</button>`).join('')}
-      <button class="btn ghost block" value="">Cancel</button>`;
-    const dlg = document.getElementById('picker');
-    dlg.onclose = () => {
-      const id = dlg.returnValue;
+      <button class="btn ghost block" value="">Cancel</button>`, (id) => {
       if (!id || id === curId) return;
       const other = onAt[id];
       st.lineup[pos] = id;
       if (other) st.lineup[other] = curId;
       replan(Math.max(s, g.cur) + 1);
-      save(); render();
-    };
-    dlg.returnValue = '';
-    dlg.showModal();
+      save(); const y = window.scrollY; render(); window.scrollTo(0, y);
+    });
   }
 
   function shareText() {
@@ -395,6 +444,8 @@
         break;
       }
       case 'make': makeGame(); return;
+      case 'starter': pickStarter(Number(el.dataset.p)); return;
+      case 'clear-starters': S.starters = {}; break;
       case 'goto-setup': S.tab = 'setup'; break;
       case 'toggle': startStop(); return;
       case 'next': goTo(S.game.cur + 1); return;
