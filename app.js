@@ -37,6 +37,9 @@
   const mmss = (sec) => { sec = Math.max(0, Math.ceil(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
   const periodLabel = (n, total) => (total === 2 ? 'H' : total === 4 ? 'Q' : 'P') + n;
   const offPos = (id, pos) => { const p = player(id); return p && !p.pos.includes(pos); };
+  const periodWord = () => ({ 2: 'half', 4: 'quarter' }[S.settings.periods] || 'period');
+  const canFull = (p) => p.full !== false;
+  const noBreak = (s, id) => P.mustRest(S.game.stints, s, S.players).has(id);
 
   // ---------- tabs ----------
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.tab; save(); render(); }));
@@ -64,10 +67,14 @@
           <button class="chip ${p.pos.includes(n) ? 'on' : ''}" data-p="${n}" data-act="pos" data-id="${p.id}">
             <b>${n}</b><small>${POS_NAME[n]}</small></button>`).join('')}
         </div>
+        <div class="check fulltick ${canFull(p) ? '' : 'off'}" data-act="full" data-id="${p.id}">
+          <div class="box">${canFull(p) ? '✓' : ''}</div>
+          <div class="grow">Can play a full ${periodWord()}${canFull(p) ? '' : '<div class="sub">Needs a break — never two rotations in a row in the same ' + periodWord() + '</div>'}</div>
+        </div>
       </div>`).join('');
     $view.innerHTML = `
       <h2>Players &amp; positions</h2>
-      <p class="hint">Light up the positions each player is allowed to play.</p>
+      <p class="hint">Light up the positions each player is allowed to play. Untick “Can play a full ${periodWord()}” for players who need a break.</p>
       ${list || '<div class="empty">No players yet.</div>'}
       <h2>Add player</h2>
       <form class="addform" id="add">
@@ -119,7 +126,7 @@
       S.settings[sel.dataset.set] = Number(sel.value); save(); render();
     }));
   }
-  const miniPos = (p) => `<span class="mini">${p.pos.slice().sort().map((n) => `<span class="pos" data-p="${n}" style="width:18px;height:18px;border-radius:5px;font-size:11px">${n}</span>`).join('')}</span>`;
+  const miniPos = (p) => (canFull(p) ? '' : '<span class="tag brk" title="Needs a break">☕</span> ') + `<span class="mini">${p.pos.slice().sort().map((n) => `<span class="pos" data-p="${n}" style="width:18px;height:18px;border-radius:5px;font-size:11px">${n}</span>`).join('')}</span>`;
 
   function makeGame() {
     if (S.game && S.game.cur > 0 && !confirm('Replace the game in progress with a new rotation?')) return;
@@ -172,7 +179,7 @@
     const rows = g.stints.map((s, i) => `
       <tr class="${i === g.cur ? 'cur' : i < g.cur ? 'past' : ''} ${i > 0 && s.period !== g.stints[i - 1].period ? 'newq' : ''}">
         <td>${periodLabel(s.period, nP)} ${s.start}′</td>
-        ${POS.map((n) => { const id = s.lineup && s.lineup[n]; return `<td class="cell ${offPos(id, n) ? 'offpos' : ''}" data-act="cell" data-s="${i}" data-p="${n}">${esc(short(id))}</td>`; }).join('')}
+        ${POS.map((n) => { const id = s.lineup && s.lineup[n]; return `<td class="cell ${offPos(id, n) || noBreak(i, id) ? 'offpos' : ''}" data-act="cell" data-s="${i}" data-p="${n}">${esc(short(id))}</td>`; }).join('')}
       </tr>`).join('');
 
     // minutes
@@ -202,7 +209,7 @@
       <div class="card lineup">
         <h2 style="margin-top:0">On court now</h2>
         ${POS.map((n) => `<div class="slot" data-act="cell" data-s="${g.cur}" data-p="${n}"><span class="pos" data-p="${n}">${n}</span>
-          <div class="grow name">${esc(nameOf(line[n]))}</div>${offPos(line[n], n) ? '<span class="tag offpos">OUT OF POS</span>' : ''}</div>`).join('')}
+          <div class="grow name">${esc(nameOf(line[n]))}</div>${offPos(line[n], n) ? '<span class="tag offpos">OUT OF POS</span>' : ''}${noBreak(g.cur, line[n]) ? '<span class="tag offpos">NO BREAK</span>' : ''}</div>`).join('')}
       </div>
       ${changes}
 
@@ -264,7 +271,7 @@
       <h3><span class="pos" data-p="${pos}">${pos}</span> ${POS_NAME[pos]} · ${periodLabel(st.period, g.settings.periods)} ${st.start}:00</h3>
       ${opts.map((p) => `<button class="pick ${p.id === curId ? 'cur' : ''}" value="${p.id}">
         <div class="grow"><div class="name">${esc(p.name)}</div>
-        <div class="sub">${planned[p.id] || 0} min planned${onAt[p.id] && p.id !== curId ? ' · on at ' + onAt[p.id] + ' (will swap)' : ''}${p.pos.includes(pos) ? '' : ' · <span style="color:var(--warn)">not a ' + pos + '</span>'}</div></div>
+        <div class="sub">${planned[p.id] || 0} min planned${onAt[p.id] && p.id !== curId ? ' · on at ' + onAt[p.id] + ' (will swap)' : ''}${p.pos.includes(pos) ? '' : ' · <span style="color:var(--warn)">not a ' + pos + '</span>'}${P.mustRest(g.stints, s, S.players).has(p.id) ? ' · <span style="color:var(--warn)">needs a break</span>' : ''}</div></div>
         ${miniPos(p)}</button>`).join('')}
       <button class="btn ghost block" value="">Cancel</button>`;
     const dlg = document.getElementById('picker');
@@ -370,6 +377,11 @@
         S.players = S.players.filter((p) => p.id !== id); delete S.avail[id];
         break;
       case 'avail': S.avail[id] = !isAvail(id); break;
+      case 'full': {
+        const p = player(id); p.full = !canFull(p);
+        if (S.game && S.game.avail[id]) replan(S.game.cur + 1);
+        break;
+      }
       case 'make': makeGame(); return;
       case 'goto-setup': S.tab = 'setup'; break;
       case 'toggle': startStop(); return;

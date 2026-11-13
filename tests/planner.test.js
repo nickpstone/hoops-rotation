@@ -35,4 +35,21 @@ for (let s = 4; s < 8; s++) assert(!Object.values(second.stints[s].lineup).inclu
 console.log('\nreplan minutes', JSON.stringify(P.minutes(second.stints)));
 // too few
 assert(P.plan(P.buildStints(q), 0, players.slice(0, 4)).error);
+// "needs a break": never two rotations in a row inside the same quarter
+function breakCheck(name, roster, settings) {
+  const pl = roster.map(([id, pos, full]) => ({ id, pos, full }));
+  const r = P.bestPlan(P.buildStints(settings), 0, pl);
+  let bad = 0;
+  r.stints.forEach((st, i) => { const rest = P.mustRest(r.stints, i, pl); Object.values(st.lineup).forEach(id => { if (rest.has(id)) bad++; }); });
+  const m = P.minutes(r.stints), v = Object.values(m);
+  console.log(`\n${name}: violations ${bad}, minutes ${JSON.stringify(m)}`);
+  r.stints.forEach(s => console.log(`Q${s.period} ${s.start}-${s.end}: ` + P.POSITIONS.map(p => `${p}:${s.lineup[p]}`).join(' ')));
+  assert.strictEqual(bad, 0);
+  return { m, v };
+}
+let { m: m2 } = breakCheck('8 players, 3 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],false],['D',[1,2,3],true],['E',[4,5],true],['F',[4,5],false],['G',[1,2,3,4,5],true],['H',[3,4,5],true]], q);
+// break players are capped at one rotation per quarter (20 min); they should get all of it
+['A','C','F'].forEach(id => assert.strictEqual(m2[id], 20));
+const rest2 = ['B','D','E','G','H'].map(id => m2[id]); assert(Math.max(...rest2) - Math.min(...rest2) <= 5);
+breakCheck('7 players, 2 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],true],['D',[1,2,3],true],['E',[4,5],false],['F',[4,5],true],['G',[1,2,3,4,5],true]], q);
 console.log('\nALL OK');

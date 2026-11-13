@@ -4,6 +4,19 @@
 
   const POSITIONS = [1, 2, 3, 4, 5];
   const OFF_POSITION_COST = 1e6;
+  const NO_BREAK_COST = 1e5;
+
+  /**
+   * Ids that must sit stint `s`: players marked "needs a break" (full === false)
+   * who were on in the previous stint of the same period.
+   */
+  function mustRest(stints, s, players) {
+    const out = new Set();
+    if (s === 0 || stints[s - 1].period !== stints[s].period || !stints[s - 1].lineup) return out;
+    const prevOn = new Set(Object.values(stints[s - 1].lineup));
+    players.forEach((p) => { if (p.full === false && prevOn.has(p.id)) out.add(p.id); });
+    return out;
+  }
 
   /** Build the list of rotation stints from the game settings. */
   function buildStints(settings) {
@@ -42,8 +55,9 @@
    * Choose the best five for one stint.
    * players: [{id, pos:[...]}]   lock: {pos: id} positions that must stay as they are.
    */
-  function solveStint(players, st, len, lock, jitter) {
+  function solveStint(players, st, len, lock, jitter, rest) {
     lock = lock || {};
+    rest = rest || new Set();
     const lockedIds = new Set(Object.values(lock));
     const free = players.filter((p) => !lockedIds.has(p.id));
     const openPos = POSITIONS.filter((pos) => !lock[pos]);
@@ -60,6 +74,7 @@
       POSITIONS.forEach((pos) => {
         let c = base;
         if (!p.pos.includes(pos)) c += OFF_POSITION_COST;
+        if (rest.has(p.id)) c += NO_BREAK_COST;
         const last = st.lastPos[p.id];
         if (last && last !== pos) c += 4;   // staying on: prefer the same spot
         cost[p.id][pos] = c;
@@ -104,7 +119,7 @@
     for (let s = from; s < out.length; s++) {
       const st = history(out, s, allIds);
       const lock = s === from ? opts.lockFirst : null;
-      out[s].lineup = solveStint(players, st, out[s].len, lock, opts.jitter);
+      out[s].lineup = solveStint(players, st, out[s].len, lock, opts.jitter, mustRest(out, s, players));
     }
     return { stints: out, error: null };
   }
@@ -124,6 +139,8 @@
         else { rest[id] = (rest[id] || 0) + 1; run[id] = 0; if (s >= from && rest[id] >= 3) sc += 3 * rest[id]; }
       });
       if (s >= from && stints[s].lineup) {
+        const rest = mustRest(stints, s, players);
+        on.forEach((id) => { if (rest.has(id)) sc += NO_BREAK_COST; });
         POSITIONS.forEach((pos) => {
           const id = stints[s].lineup[pos];
           if (posOf[id] && !posOf[id].includes(pos)) sc += OFF_POSITION_COST;
@@ -157,7 +174,7 @@
     return m;
   }
 
-  const api = { POSITIONS, buildStints, history, solveStint, plan, bestPlan, score, minutes };
+  const api = { POSITIONS, mustRest, buildStints, history, solveStint, plan, bestPlan, score, minutes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Planner = api;
 })(this);

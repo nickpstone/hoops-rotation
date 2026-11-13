@@ -1,5 +1,5 @@
 // Network first (so updates show up), falling back to cache when the gym has no signal.
-const CACHE = 'hoops-rotation-v1';
+const CACHE = 'hoops-rotation-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'planner.js', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });

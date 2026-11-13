@@ -130,3 +130,7 @@ dialog h3 { margin: 2px 0 10px; }
   border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px; }
 .pick.cur { border-color: var(--accent); }
 .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+
+.fulltick { margin: 10px 0 0; padding: 8px 10px; background: var(--panel2); font-size: 15px; }
+.fulltick .box { width: 24px; height: 24px; }
+.tag.brk { background: var(--panel2); padding: 2px 5px; }
