@@ -3,11 +3,26 @@
   'use strict';
 
   const POSITIONS = [1, 2, 3, 4, 5];
-  const OFF_POSITION_COST = 1e6;
-  const NO_BREAK_COST = 1e5;
+  const OFF_POSITION_COST = 1e9;
+  // Priority order: positions > at most one full quarter for break players > even minutes
+  // > using that one full quarter at all > shorter streaks.
+  const EXTRA_FULL_COST = 1e7;   // a break player's 2nd+ full quarter of the game
+  const FIRST_FULL_COST = 1000;  // their 1st full quarter: allowed when it evens minutes
+  const EVEN_WEIGHT = 100;   // evenness of minutes always beats streak preferences
+
+  /** How many times each player has played back-to-back within a period in stints [0, upto). */
+  function fullCounts(stints, upto, players) {
+    const c = {};
+    for (let s = 0; s < upto; s++) {
+      if (!stints[s].lineup) continue;
+      const rest = mustRest(stints, s, players);
+      Object.values(stints[s].lineup).forEach((id) => { if (rest.has(id)) c[id] = (c[id] || 0) + 1; });
+    }
+    return c;
+  }
 
   /**
-   * Ids that must sit stint `s`: players marked "needs a break" (full === false)
+   * Ids that should sit stint `s`: players marked "needs a break" (full === false)
    * who were on in the previous stint of the same period.
    */
   function mustRest(stints, s, players) {
@@ -55,9 +70,10 @@
    * Choose the best five for one stint.
    * players: [{id, pos:[...]}]   lock: {pos: id} positions that must stay as they are.
    */
-  function solveStint(players, st, len, lock, jitter, rest) {
+  function solveStint(players, st, len, lock, jitter, rest, fullUsed) {
     lock = lock || {};
     rest = rest || new Set();
+    fullUsed = fullUsed || {};
     const lockedIds = new Set(Object.values(lock));
     const free = players.filter((p) => !lockedIds.has(p.id));
     const openPos = POSITIONS.filter((pos) => !lock[pos]);
@@ -74,7 +90,7 @@
       POSITIONS.forEach((pos) => {
         let c = base;
         if (!p.pos.includes(pos)) c += OFF_POSITION_COST;
-        if (rest.has(p.id)) c += NO_BREAK_COST;
+        if (rest.has(p.id)) c += fullUsed[p.id] ? EXTRA_FULL_COST : FIRST_FULL_COST / 3;
         const last = st.lastPos[p.id];
         if (last && last !== pos) c += 4;   // staying on: prefer the same spot
         cost[p.id][pos] = c;
@@ -119,7 +135,7 @@
     for (let s = from; s < out.length; s++) {
       const st = history(out, s, allIds);
       const lock = s === from ? opts.lockFirst : null;
-      out[s].lineup = solveStint(players, st, out[s].len, lock, opts.jitter, mustRest(out, s, players));
+      out[s].lineup = solveStint(players, st, out[s].len, lock, opts.jitter, mustRest(out, s, players), fullCounts(out, s, players));
     }
     return { stints: out, error: null };
   }
@@ -130,7 +146,7 @@
     const m = minutes(stints);
     const posOf = {}; players.forEach((p) => { posOf[p.id] = p.pos; });
     let sc = 0;
-    ids.forEach((id) => { sc += (m[id] || 0) * (m[id] || 0); });
+    ids.forEach((id) => { sc += EVEN_WEIGHT * (m[id] || 0) * (m[id] || 0); });
     const run = {}, rest = {};
     for (let s = 0; s < stints.length; s++) {
       const on = new Set(Object.values(stints[s].lineup || {}));
@@ -139,28 +155,64 @@
         else { rest[id] = (rest[id] || 0) + 1; run[id] = 0; if (s >= from && rest[id] >= 3) sc += 3 * rest[id]; }
       });
       if (s >= from && stints[s].lineup) {
-        const rest = mustRest(stints, s, players);
-        on.forEach((id) => { if (rest.has(id)) sc += NO_BREAK_COST; });
         POSITIONS.forEach((pos) => {
           const id = stints[s].lineup[pos];
           if (posOf[id] && !posOf[id].includes(pos)) sc += OFF_POSITION_COST;
         });
       }
     }
+    const fc = fullCounts(stints, stints.length, players);
+    Object.keys(fc).forEach((id) => { sc += FIRST_FULL_COST + EXTRA_FULL_COST * (fc[id] - 1); });
     return sc;
+  }
+
+  /**
+   * Local search: try every single change (bench player in, or two on-court players trading spots)
+   * in stints [from, end) and keep any that lowers the score. Repeat until nothing helps.
+   */
+  function improve(stints, from, players, lockFirst) {
+    let cur = score(stints, from, players);
+    const ids = players.map((p) => p.id);
+    let better = true, guard = 0;
+    while (better && guard++ < 50) {
+      better = false;
+      for (let s = from; s < stints.length; s++) {
+        const lu = stints[s].lineup;
+        for (const pos of POSITIONS) {
+          if (s === from && lockFirst && lockFirst[pos]) continue;
+          const was = lu[pos];
+          for (const id of ids) {
+            if (id === was) continue;
+            const otherPos = POSITIONS.find((q) => lu[q] === id);
+            if (otherPos && s === from && lockFirst && lockFirst[otherPos]) continue;
+            lu[pos] = id; if (otherPos) lu[otherPos] = was;
+            const sc = score(stints, from, players);
+            if (sc < cur - 1e-9) { cur = sc; better = true; break; }
+            lu[pos] = was; if (otherPos) lu[otherPos] = id;
+          }
+        }
+      }
+    }
+    return cur;
   }
 
   /** Run the planner many times with a little randomness and keep the fairest result. */
   function bestPlan(stints, from, players, opts) {
     opts = opts || {};
     const tries = opts.tries || 60;
-    let best = null, bestScore = Infinity;
+    const cands = [];
     for (let t = 0; t < tries; t++) {
       const r = plan(stints, from, players, { lockFirst: opts.lockFirst, jitter: opts.shuffle || t > 0 });
       if (r.error) return r;
-      const sc = score(r.stints, from, players);
-      if (sc < bestScore) { best = r; bestScore = sc; }
+      cands.push({ r, sc: score(r.stints, from, players) });
     }
+    // Polish the most promising few; keep the best.
+    cands.sort((a, b) => a.sc - b.sc);
+    let best = null, bestScore = Infinity;
+    cands.slice(0, opts.polish || 6).forEach((c) => {
+      const sc = improve(c.r.stints, from, players, opts.lockFirst);
+      if (sc < bestScore) { best = c.r; bestScore = sc; }
+    });
     return best;
   }
 
@@ -174,7 +226,7 @@
     return m;
   }
 
-  const api = { POSITIONS, mustRest, buildStints, history, solveStint, plan, bestPlan, score, minutes };
+  const api = { POSITIONS, mustRest, fullCounts, improve, buildStints, history, solveStint, plan, bestPlan, score, minutes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Planner = api;
 })(this);

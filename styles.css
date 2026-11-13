@@ -139,3 +139,4 @@ dialog h3 { margin: 2px 0 10px; }
 .swap:first-of-type { border-top: 0; }
 .swap .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swap > .arrow { font-size: 18px; padding: 0 2px; }
+.grid td.cell.fullq { text-decoration: underline dotted var(--warn); text-underline-offset: 3px; }

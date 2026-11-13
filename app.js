@@ -69,7 +69,7 @@
         </div>
         <div class="check fulltick ${canFull(p) ? '' : 'off'}" data-act="full" data-id="${p.id}">
           <div class="box">${canFull(p) ? '✓' : ''}</div>
-          <div class="grow">Can play a full ${periodWord()}${canFull(p) ? '' : '<div class="sub">Needs a break — never two rotations in a row in the same ' + periodWord() + '</div>'}</div>
+          <div class="grow">Can play a full ${periodWord()}${canFull(p) ? '' : '<div class="sub">Needs a break — sits half of each ' + periodWord() + '. May play one full ' + periodWord() + ' a game only if needed to keep minutes even.</div>'}</div>
         </div>
       </div>`).join('');
     $view.innerHTML = `
@@ -191,7 +191,7 @@
     const rows = g.stints.map((s, i) => `
       <tr class="${i === g.cur ? 'cur' : i < g.cur ? 'past' : ''} ${i > 0 && s.period !== g.stints[i - 1].period ? 'newq' : ''}">
         <td>${periodLabel(s.period, nP)} ${s.start}′</td>
-        ${POS.map((n) => { const id = s.lineup && s.lineup[n]; return `<td class="cell ${offPos(id, n) || noBreak(i, id) ? 'offpos' : ''}" data-act="cell" data-s="${i}" data-p="${n}">${esc(short(id))}</td>`; }).join('')}
+        ${POS.map((n) => { const id = s.lineup && s.lineup[n]; return `<td class="cell ${offPos(id, n) ? 'offpos' : noBreak(i, id) ? 'fullq' : ''}" data-act="cell" data-s="${i}" data-p="${n}">${esc(short(id))}</td>`; }).join('')}
       </tr>`).join('');
 
     // minutes
@@ -221,12 +221,12 @@
       <div class="card lineup">
         <h2 style="margin-top:0">On court now</h2>
         ${POS.map((n) => `<div class="slot" data-act="cell" data-s="${g.cur}" data-p="${n}"><span class="pos" data-p="${n}">${n}</span>
-          <div class="grow name">${esc(nameOf(line[n]))}</div>${offPos(line[n], n) ? '<span class="tag offpos">OUT OF POS</span>' : ''}${noBreak(g.cur, line[n]) ? '<span class="tag offpos">NO BREAK</span>' : ''}</div>`).join('')}
+          <div class="grow name">${esc(nameOf(line[n]))}</div>${offPos(line[n], n) ? '<span class="tag offpos">OUT OF POS</span>' : ''}${noBreak(g.cur, line[n]) ? '<span class="tag brk">FULL ' + (nP === 2 ? 'HALF' : nP === 4 ? 'QTR' : 'PERIOD') + '</span>' : ''}</div>`).join('')}
       </div>
       ${changes}
 
       <h2>Full game plan</h2>
-      <p class="hint">Tap any spot to swap someone in — the rest of the game re-balances.</p>
+      <p class="hint">Tap any spot to swap someone in — the rest of the game re-balances. <span style="text-decoration:underline dotted var(--warn);text-underline-offset:3px">Dotted</span> = a break player's one full ${periodWord()}.</p>
       <div class="card" style="padding:4px 8px">
         <table class="grid"><thead><tr><th></th>${POS.map((n) => `<th><span class="pos" data-p="${n}" style="width:24px;height:24px;font-size:13px">${n}</span></th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody></table>
@@ -283,7 +283,7 @@
       <h3><span class="pos" data-p="${pos}">${pos}</span> ${POS_NAME[pos]} · ${periodLabel(st.period, g.settings.periods)} ${st.start}:00</h3>
       ${opts.map((p) => `<button class="pick ${p.id === curId ? 'cur' : ''}" value="${p.id}">
         <div class="grow"><div class="name">${esc(p.name)}</div>
-        <div class="sub">${planned[p.id] || 0} min planned${onAt[p.id] && p.id !== curId ? ' · on at ' + onAt[p.id] + ' (will swap)' : ''}${p.pos.includes(pos) ? '' : ' · <span style="color:var(--warn)">not a ' + pos + '</span>'}${P.mustRest(g.stints, s, S.players).has(p.id) ? ' · <span style="color:var(--warn)">needs a break</span>' : ''}</div></div>
+        <div class="sub">${planned[p.id] || 0} min planned${onAt[p.id] && p.id !== curId ? ' · on at ' + onAt[p.id] + ' (will swap)' : ''}${p.pos.includes(pos) ? '' : ' · <span style="color:var(--warn)">not a ' + pos + '</span>'}${P.mustRest(g.stints, s, S.players).has(p.id) ? ' · <span style="color:var(--warn)">would play full ' + periodWord() + '</span>' : ''}</div></div>
         ${miniPos(p)}</button>`).join('')}
       <button class="btn ghost block" value="">Cancel</button>`;
     const dlg = document.getElementById('picker');

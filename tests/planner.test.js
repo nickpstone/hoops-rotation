@@ -35,21 +35,22 @@ for (let s = 4; s < 8; s++) assert(!Object.values(second.stints[s].lineup).inclu
 console.log('\nreplan minutes', JSON.stringify(P.minutes(second.stints)));
 // too few
 assert(P.plan(P.buildStints(q), 0, players.slice(0, 4)).error);
-// "needs a break": never two rotations in a row inside the same quarter
-function breakCheck(name, roster, settings) {
+// "needs a break": minutes stay even; a break player plays at most one full quarter
+function breakCheck(name, roster, settings, maxSpread) {
   const pl = roster.map(([id, pos, full]) => ({ id, pos, full }));
   const r = P.bestPlan(P.buildStints(settings), 0, pl);
-  let bad = 0;
-  r.stints.forEach((st, i) => { const rest = P.mustRest(r.stints, i, pl); Object.values(st.lineup).forEach(id => { if (rest.has(id)) bad++; }); });
-  const m = P.minutes(r.stints), v = Object.values(m);
-  console.log(`\n${name}: violations ${bad}, minutes ${JSON.stringify(m)}`);
+  const fc = P.fullCounts(r.stints, r.stints.length, pl);
+  const m = P.minutes(r.stints), v = pl.map(p => m[p.id] || 0);
+  console.log(`\n${name}: full quarters ${JSON.stringify(fc)}, minutes ${JSON.stringify(m)}`);
   r.stints.forEach(s => console.log(`Q${s.period} ${s.start}-${s.end}: ` + P.POSITIONS.map(p => `${p}:${s.lineup[p]}`).join(' ')));
-  assert.strictEqual(bad, 0);
-  return { m, v };
+  Object.values(fc).forEach(c => assert(c <= 1, 'more than one full quarter'));
+  assert(Math.max(...v) - Math.min(...v) <= maxSpread, 'uneven');
+  return { m, fc };
 }
-let { m: m2 } = breakCheck('8 players, 3 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],false],['D',[1,2,3],true],['E',[4,5],true],['F',[4,5],false],['G',[1,2,3,4,5],true],['H',[3,4,5],true]], q);
-// break players are capped at one rotation per quarter (20 min); they should get all of it
-['A','C','F'].forEach(id => assert.strictEqual(m2[id], 20));
-const rest2 = ['B','D','E','G','H'].map(id => m2[id]); assert(Math.max(...rest2) - Math.min(...rest2) <= 5);
-breakCheck('7 players, 2 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],true],['D',[1,2,3],true],['E',[4,5],false],['F',[4,5],true],['G',[1,2,3,4,5],true]], q);
+// 8 players, 3 need breaks: everyone 25
+let { m: m2 } = breakCheck('8 players, 3 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],false],['D',[1,2,3],true],['E',[4,5],true],['F',[4,5],false],['G',[1,2,3,4,5],true],['H',[3,4,5],true]], q, 0);
+// 10 players, 4 need breaks: 20 each, nobody needs a full quarter
+let { fc: f3 } = breakCheck('10 players, 4 need breaks', [['A',[1,2,3],false],['B',[1,2,3],false],['C',[1,2,3],true],['D',[1,2,3],true],['E',[1,2,3],true],['F',[4,5],false],['G',[4,5],false],['H',[3,4,5],true],['I',[1,2,3,4,5],true],['J',[4,5],true]], q, 0);
+assert.strictEqual(Object.keys(f3).length, 0);
+breakCheck('7 players, 2 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],true],['D',[1,2,3],true],['E',[4,5],false],['F',[4,5],true],['G',[1,2,3,4,5],true]], q, 5);
 console.log('\nALL OK');
