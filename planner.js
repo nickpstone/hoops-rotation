@@ -7,7 +7,8 @@
   // Priority order: positions > at most one full quarter for break players > even minutes
   // > using that one full quarter at all > shorter streaks.
   const EXTRA_FULL_COST = 1e7;   // a break player's 2nd+ full quarter of the game
-  const FIRST_FULL_COST = 1000;  // their 1st full quarter: allowed when it evens minutes
+  const FIRST_FULL_COST = 1000;
+  const POS_MOVE_COST = 500;     // staying on within a period but switching position  // their 1st full quarter: allowed when it evens minutes
   const EVEN_WEIGHT = 100;   // evenness of minutes always beats streak preferences
 
   /** How many times each player has played back-to-back within a period in stints [0, upto). */
@@ -92,7 +93,7 @@
         if (!p.pos.includes(pos)) c += OFF_POSITION_COST;
         if (rest.has(p.id)) c += fullUsed[p.id] ? EXTRA_FULL_COST : FIRST_FULL_COST / 3;
         const last = st.lastPos[p.id];
-        if (last && last !== pos) c += 4;   // staying on: prefer the same spot
+        if (last && last !== pos) c += 150; // staying on: keep the same spot
         cost[p.id][pos] = c;
       });
     });
@@ -155,9 +156,11 @@
         else { rest[id] = (rest[id] || 0) + 1; run[id] = 0; if (s >= from && rest[id] >= 3) sc += 3 * rest[id]; }
       });
       if (s >= from && stints[s].lineup) {
+        const prev = s > 0 && stints[s - 1].period === stints[s].period ? stints[s - 1].lineup : null;
         POSITIONS.forEach((pos) => {
           const id = stints[s].lineup[pos];
           if (posOf[id] && !posOf[id].includes(pos)) sc += OFF_POSITION_COST;
+          if (prev && prev[pos] !== id && Object.values(prev).includes(id)) sc += POS_MOVE_COST;
         });
       }
     }
@@ -216,6 +219,17 @@
     return best;
   }
 
+  /** Number of times a player stays on within a period but changes position. */
+  function positionMoves(stints) {
+    let n = 0;
+    for (let s = 1; s < stints.length; s++) {
+      if (stints[s].period !== stints[s - 1].period || !stints[s].lineup || !stints[s - 1].lineup) continue;
+      const prev = stints[s - 1].lineup;
+      POSITIONS.forEach((pos) => { const id = stints[s].lineup[pos]; if (prev[pos] !== id && Object.values(prev).includes(id)) n++; });
+    }
+    return n;
+  }
+
   /** Total planned minutes per player id. */
   function minutes(stints) {
     const m = {};
@@ -226,7 +240,7 @@
     return m;
   }
 
-  const api = { POSITIONS, mustRest, fullCounts, improve, buildStints, history, solveStint, plan, bestPlan, score, minutes };
+  const api = { POSITIONS, positionMoves, mustRest, fullCounts, improve, buildStints, history, solveStint, plan, bestPlan, score, minutes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Planner = api;
 })(this);

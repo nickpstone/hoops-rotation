@@ -41,16 +41,19 @@ function breakCheck(name, roster, settings, maxSpread) {
   const r = P.bestPlan(P.buildStints(settings), 0, pl);
   const fc = P.fullCounts(r.stints, r.stints.length, pl);
   const m = P.minutes(r.stints), v = pl.map(p => m[p.id] || 0);
-  console.log(`\n${name}: full quarters ${JSON.stringify(fc)}, minutes ${JSON.stringify(m)}`);
+  const moves = P.positionMoves(r.stints);
+  console.log(`\n${name}: position moves ${moves}, full quarters ${JSON.stringify(fc)}, minutes ${JSON.stringify(m)}`);
   r.stints.forEach(s => console.log(`Q${s.period} ${s.start}-${s.end}: ` + P.POSITIONS.map(p => `${p}:${s.lineup[p]}`).join(' ')));
   Object.values(fc).forEach(c => assert(c <= 1, 'more than one full quarter'));
   assert(Math.max(...v) - Math.min(...v) <= maxSpread, 'uneven');
-  return { m, fc };
+  return { m, fc, moves };
 }
 // 8 players, 3 need breaks: everyone 25
-let { m: m2 } = breakCheck('8 players, 3 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],false],['D',[1,2,3],true],['E',[4,5],true],['F',[4,5],false],['G',[1,2,3,4,5],true],['H',[3,4,5],true]], q, 0);
+let { m: m2, moves: mv2 } = breakCheck('8 players, 3 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],false],['D',[1,2,3],true],['E',[4,5],true],['F',[4,5],false],['G',[1,2,3,4,5],true],['H',[3,4,5],true]], q, 0);
 // 10 players, 4 need breaks: 20 each, nobody needs a full quarter
 let { fc: f3 } = breakCheck('10 players, 4 need breaks', [['A',[1,2,3],false],['B',[1,2,3],false],['C',[1,2,3],true],['D',[1,2,3],true],['E',[1,2,3],true],['F',[4,5],false],['G',[4,5],false],['H',[3,4,5],true],['I',[1,2,3,4,5],true],['J',[4,5],true]], q, 0);
 assert.strictEqual(Object.keys(f3).length, 0);
 breakCheck('7 players, 2 need breaks', [['A',[1,2,3],false],['B',[1,2,3],true],['C',[1,2,3],true],['D',[1,2,3],true],['E',[4,5],false],['F',[4,5],true],['G',[1,2,3,4,5],true]], q, 5);
+assert.strictEqual(mv2, 0, 'player changed position mid-quarter');
+assert.strictEqual(P.positionMoves(P.bestPlan(P.buildStints(q), 0, players).stints), 0);
 console.log('\nALL OK');
