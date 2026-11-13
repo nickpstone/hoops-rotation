@@ -134,3 +134,8 @@ dialog h3 { margin: 2px 0 10px; }
 .fulltick { margin: 10px 0 0; padding: 8px 10px; background: var(--panel2); font-size: 15px; }
 .fulltick .box { width: 24px; height: 24px; }
 .tag.brk { background: var(--panel2); padding: 2px 5px; }
+.swap { display: grid; grid-template-columns: auto 1fr auto auto 1fr; align-items: center; gap: 6px;
+  padding: 8px 0; border-top: 1px solid var(--line); }
+.swap:first-of-type { border-top: 0; }
+.swap .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swap > .arrow { font-size: 18px; padding: 0 2px; }

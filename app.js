@@ -165,12 +165,24 @@
     let changes = '';
     if (next && next.lineup) {
       const nextOn = new Set(Object.values(next.lineup));
-      const ins = POS.filter((n) => !nowOn.has(next.lineup[n])).map((n) => `<div><span class="tag in">ON</span> ${esc(nameOf(next.lineup[n]))} <span class="arrow">→ ${n} ${POS_NAME[n]}</span></div>`);
-      const outs = POS.filter((n) => !nextOn.has(line[n])).map((n) => `<div><span class="tag out">OFF</span> ${esc(nameOf(line[n]))}</div>`);
+      // Pair each player going off with the player coming on: same position first, then the rest in order.
+      let outPos = POS.filter((n) => !nextOn.has(line[n]));
+      let inPos = POS.filter((n) => !nowOn.has(next.lineup[n]));
+      const pairs = [];
+      outPos.filter((n) => inPos.includes(n)).forEach((n) => pairs.push([n, n]));
+      outPos = outPos.filter((n) => !pairs.some((pr) => pr[0] === n));
+      inPos = inPos.filter((n) => !pairs.some((pr) => pr[1] === n));
+      outPos.forEach((n, i) => pairs.push([n, inPos[i]]));
+      const swaps = pairs.map(([o, i]) => `
+        <div class="swap">
+          <span class="tag out">OFF</span><span class="nm">${esc(nameOf(line[o]))}</span>
+          <span class="arrow">⇄</span>
+          <span class="tag in">ON</span><span class="nm">${esc(nameOf(next.lineup[i]))} <span class="arrow">${i} ${POS_NAME[i]}</span></span>
+        </div>`);
       const moves = POS.filter((n) => nowOn.has(next.lineup[n]) && line[n] !== next.lineup[n])
         .map((n) => `<div><span class="arrow">↔</span> ${esc(nameOf(next.lineup[n]))} <span class="arrow">moves to ${n} ${POS_NAME[n]}</span></div>`);
       const label = next.period !== st.period ? `Start of ${periodLabel(next.period, nP)}` : `At ${next.start}:00`;
-      changes = `<div class="card changes"><h2 style="margin-top:0">Next sub · ${label}</h2>${outs.join('') + ins.join('') + moves.join('') || '<div class="sub">No changes</div>'}</div>`;
+      changes = `<div class="card changes"><h2 style="margin-top:0">Next sub · ${label}</h2>${swaps.join('') + moves.join('') || '<div class="sub">No changes</div>'}</div>`;
     } else {
       changes = `<div class="card changes"><div class="sub">Last rotation of the game.</div></div>`;
     }
